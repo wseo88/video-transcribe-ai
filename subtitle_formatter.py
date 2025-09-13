@@ -58,7 +58,7 @@ def split_subtitle(text, max_chars=42):
     return '\n'.join(lines)
 
 
-def write_to_srt(punct_model, aligned_result, video_name):
+def write_to_srt(punct_model, aligned_result, video_name, output_dir=None):
     """
     Write transcription results to SRT subtitle file.
     
@@ -66,12 +66,18 @@ def write_to_srt(punct_model, aligned_result, video_name):
         punct_model: Punctuation restoration model
         aligned_result (dict): Aligned transcription results
         video_name (str): Name of the video file (without extension)
+        output_dir (str, optional): Output directory path
     
     Returns:
         str: Path to the generated SRT file
     """
-    os.makedirs(video_name, exist_ok=True)
-    output_path = os.path.join(video_name, f"{video_name}.srt")
+    if output_dir is None:
+        output_dir = video_name
+    
+    # Create video-specific subdirectory
+    video_output_dir = os.path.join(output_dir, video_name)
+    os.makedirs(video_output_dir, exist_ok=True)
+    output_path = os.path.join(video_output_dir, f"{video_name}.srt")
 
     srt_index = 1
     with open(output_path, "w", encoding="utf-8") as srt_file:
