@@ -3,14 +3,16 @@ import sys
 import argparse
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Literal
 import whisperx
 from deepmultilingualpunctuation import PunctuationModel
+from pydantic import BaseModel, Field, field_validator
 
 # Import our custom modules
 from audio_processor import extract_audio
 from model_manager import get_model, load_alignment_model, DEVICE
 from subtitle_formatter import write_to_srt
+
 
 # Configure logging
 logging.basicConfig(
@@ -23,6 +25,75 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class TranscribeConfig(BaseModel):
+    """Pydantic model of video transcription arguments"""
+
+    # input options
+    input: str = Field(default='.', description='Input video file or directory containing MP4 files')
+
+    # model options
+    model: Literal['tiny', 'base','small', 'medium', 'large'] = Field(default="medium", description="Whisper model size")
+    device: Literal['cuda', 'cpu', 'auto'] = Field(default='auto', description='Device to use for processing')
+
+    # Language options
+    language: str = Field(default='auto', description='Language code or "auto" for detection')
+    #no_translate: bool = Field(default=False, description='Transcribe only (no translation to English)')
+
+    # Output options
+    output: Optional[str] = Field(default=None, description='Output directory for subtitle files')
+    output_format: Literal['srt', 'vtt', 'txt'] = Field(default='srt', description='Output subtitle format')
+    #keep_audio: bool = Field(default=False, description='Keep extracted audio files')
+    
+    # Processing options
+    batch_size: int = Field(default=1, ge=1, description='Number of files to process simultaneously')
+    #resume: bool = Field(default=False, description='Skip files that already have subtitle files')
+
+    # Utility options
+    verbose: bool = Field(default=False, description='Enable verbose logging')
+    dry_run: bool = Field(default=False, description='Show what would be processed without actually processing')
+    
+    
+    @field_validator('input')
+    @classmethod
+    def validate_input_path(cls, value):
+        """Validate input path exists."""
+        path = Path(value)
+        if not path.exists():
+            raise ValueError(f'Input path does not exist: {value}')
+        return value
+
+    @field_validator('language')
+    @classmethod
+    def validate_language(cls, value):
+        """Validate language code."""
+        if value != 'auto' and len(value) != 2:
+            raise ValueError('Language code must be 2 characters (e.g., "en", "es") or "auto"')
+        return value
+    
+    @property
+    def effective_device(self) -> str:
+        """Get the effective device to use."""
+        if self.device == 'auto':
+            return DEVICE
+        return self.device
+    
+    @property
+    def effective_output_dir(self) -> Path:
+        """Get the effective output directory."""
+        if self.output:
+            output_dir = Path(self.output)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            return output_dir
+        else:
+            input_path = Path(self.input)
+            if input_path.is_file():
+                return input_path.parent
+            else:
+                return input_path
+
+
+
+
 def setup_argument_parser() -> argparse.ArgumentParser:
     """Set up command line argument parser."""
     parser = argparse.ArgumentParser(
@@ -30,12 +101,11 @@ def setup_argument_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                                    # Process all MP4 files in current directory
-  %(prog)s -i video.mp4                       # Process specific video file
-  %(prog)s -i ./videos/ -m large             # Process all videos in directory with large model
-  %(prog)s -i video.mp4 -l auto -o ./output/ # Auto-detect language, save to output directory
-  %(prog)s -i video.mp4 --no-translate       # Transcribe without translation
-  %(prog)s -i video.mp4 -m tiny --verbose    # Use tiny model with verbose logging
+%(prog)s                                   # Process all MP4 files in current directory
+%(prog)s -i video.mp4                      # Process specific video file
+%(prog)s -i ./videos/ -m large             # Process all videos in directory with large model
+%(prog)s -i video.mp4 -l auto -o ./output/ # Auto-detect language, save to output directory
+%(prog)s -i video.mp4 -m tiny --verbose    # Use tiny model with verbose logging
         """
     )
     
@@ -71,11 +141,7 @@ Examples:
         default='auto',
         help='Language code (e.g., en, es, fr) or "auto" for detection (default: auto)'
     )
-    language_group.add_argument(
-        '--no-translate',
-        action='store_true',
-        help='Transcribe only (no translation to English)'
-    )
+
     
     # Output options
     output_group = parser.add_argument_group('Output Options')
@@ -104,11 +170,6 @@ Examples:
         default=1,
         help='Number of files to process simultaneously (default: 1)'
     )
-    processing_group.add_argument(
-        '--resume',
-        action='store_true',
-        help='Skip files that already have subtitle files'
-    )
     
     # Utility options
     utility_group = parser.add_argument_group('Utility Options')
@@ -129,6 +190,17 @@ Examples:
     )
     
     return parser
+
+
+def parse_args_to_config(args: argparse.Namespace) -> TranscribeConfig:
+    """Convert argparse Namespace to TranscribeConfig."""
+    try:
+        # Convert args to dict, handling the no_translate flag
+        config_dict = vars(args)
+        return TranscribeConfig(**config_dict)
+    except Exception as e:
+        logger.error(f"Configuration validation error: {e}")
+        sys.exit(1)
 
 
 def get_video_files(input_path: str) -> List[Path]:
@@ -152,15 +224,6 @@ def get_video_files(input_path: str) -> List[Path]:
         return []
 
 
-def should_skip_file(video_file: Path, output_dir: Path, resume: bool) -> bool:
-    """Check if file should be skipped based on resume option."""
-    if not resume:
-        return False
-    
-    subtitle_file = output_dir / video_file.stem / f"{video_file.stem}.srt"
-    return subtitle_file.exists()
-
-
 def process_video(
     video_file: Path,
     model,
@@ -169,8 +232,7 @@ def process_video(
     punct_model,
     output_dir: Path,
     language: str,
-    translate: bool,
-    keep_audio: bool,
+
     device: str
 ) -> bool:
     """Process a single video file."""
@@ -182,7 +244,7 @@ def process_video(
         audio_file = extract_audio(str(video_file))
         
         # Determine transcription task
-        task = "translate" if translate else "transcribe"
+        task = "transcribe"
         transcribe_kwargs = {"task": task}
         
         if language != "auto":
@@ -209,9 +271,8 @@ def process_video(
         logger.info(f"✅ Subtitles saved to: {output_path}")
         
         # Clean up temporary audio file
-        if not keep_audio:
-            os.remove(audio_file)
-            logger.debug("Cleaned up temporary audio file")
+        os.remove(audio_file)
+        logger.debug("Cleaned up temporary audio file")
         
         return True
         
@@ -225,47 +286,25 @@ def main():
     parser = setup_argument_parser()
     args = parser.parse_args()
     
+    # Convert to Pydantic config with validation
+    config = parse_args_to_config(args)
+    
     # Set logging level
-    if args.verbose:
+    if config.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
     
-    # Determine device
-    if args.device == 'auto':
-        device = DEVICE
-    else:
-        device = args.device
-    
     # Get video files
-    video_files = get_video_files(args.input)
+    video_files = get_video_files(config.input)
     
     if not video_files:
         logger.error("No video files found!")
         return 1
     
-    # Set up output directory
-    if args.output:
-        output_dir = Path(args.output)
-        output_dir.mkdir(parents=True, exist_ok=True)
-    else:
-        if Path(args.input).is_file():
-            output_dir = Path(args.input).parent
-        else:
-            output_dir = Path(args.input)
-    
-    # Filter files based on resume option
-    if args.resume:
-        original_count = len(video_files)
-        video_files = [f for f in video_files if not should_skip_file(f, output_dir, args.resume)]
-        skipped_count = original_count - len(video_files)
-        if skipped_count > 0:
-            logger.info(f"Skipping {skipped_count} files that already have subtitles")
-    
-    if not video_files:
-        logger.info("No files to process!")
-        return 0
+    # Get effective output directory (handled by Pydantic model)
+    output_dir = config.effective_output_dir
     
     # Dry run mode
-    if args.dry_run:
+    if config.dry_run:
         logger.info("DRY RUN - Files that would be processed:")
         for video_file in video_files:
             logger.info(f"  - {video_file}")
@@ -274,8 +313,8 @@ def main():
     # Load models
     logger.info("Loading models...")
     try:
-        model = get_model(size=args.model, device=device)
-        model_a, metadata = load_alignment_model(language_code="en", device=device)
+        model = get_model(size=config.model, device=config.effective_device)
+        model_a, metadata = load_alignment_model(language_code="en", device=config.effective_device)
         punct_model = PunctuationModel()
         logger.info("Models loaded successfully.")
     except Exception as e:
@@ -298,10 +337,8 @@ def main():
             metadata,
             punct_model,
             output_dir,
-            args.language,
-            not args.no_translate,
-            args.keep_audio,
-            device
+            config.language,
+            config.effective_device
         ):
             successful += 1
         else:
