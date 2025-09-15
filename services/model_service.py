@@ -1,5 +1,11 @@
+import typing as T
+
 import torch
 import whisperx
+
+from core.logging import get_logger
+
+logger = get_logger()
 
 
 class ModelService:
@@ -8,9 +14,20 @@ class ModelService:
     Handles loading and managing WhisperX models.
     """
 
-    def __init__(self, device: str):
+    DEFAULT_ALIGNMENT_LANGUAGE = "en"
+    VALID_MODEL_SIZE = ["tiny", "base", "small", "medium", "large"]
+
+    def __init__(self, device: str, alignment_language: T.Optional[str] = None):
+        self.alignment_language = (
+            alignment_language
+            if alignment_language
+            else self.DEFAULT_ALIGNMENT_LANGUAGE
+        )
         if device == "auto":
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        elif device == "cuda" and not torch.cuda.is_available():
+            logger.warning("CUDA requested but not available, falling back to CPU")
+            self.device = "cpu"
         else:
             self.device = device
 
@@ -24,20 +41,29 @@ class ModelService:
 
         Returns:
             WhisperX model instance
-        """
-        return whisperx.load_model(size, self.device, compute_type=compute_type)
 
-    def load_alignment_model(self, language_code="en"):
+        Raises:
+            ValueError: If model size is invalid
+            RuntimeError: If model loading fails
+        """
+        if size not in self.VALID_MODEL_SIZE:
+            raise ValueError(
+                f"Invalid model size: {size}. Must be one of {self.VALID_MODEL_SIZE}"
+            )
+
+        try:
+            return whisperx.load_model(size, self.device, compute_type=compute_type)
+        except Exception as e:
+            logger.error(f"Failed to load model: {size}: {e}")
+            raise
+
+    def load_alignment_model(self):
         """
         Load alignment model for word-level timing.
-
-        Args:
-            language_code (str): Language code for alignment
-            device (str): Device to run on (defaults to DEVICE)
 
         Returns:
             tuple: (model, metadata) for alignment
         """
         return whisperx.load_align_model(
-            language_code=language_code, device=self.device
+            language_code=self.alignment_language, device=self.device
         )

@@ -11,7 +11,7 @@ from pydantic import (
 )
 
 
-class TranscribeConfigModel(BaseModel):
+class TranscribeConfig(BaseModel):
     """Pydantic model of video transcription arguments"""
 
     # input options
