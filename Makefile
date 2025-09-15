@@ -20,7 +20,7 @@ install-dev:
 # Format code
 format:
 	black .
-	ruff --fix .
+	ruff check . --fix
 
 # Run linter
 lint:
