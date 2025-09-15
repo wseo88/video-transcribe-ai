@@ -26,7 +26,7 @@ class TranscriptionService:
         self.model_alignment = None
         self.metadata = None
         self.punctuation_model = PunctuationModel()
-        self.subtitle_service = SubtitleService()
+        self.subtitle_service = SubtitleService(config)
 
     def _get_video_files_to_process(self) -> T.Optional[T.List[Path]]:
         video_files: T.List[Path] = self.vide_file_service.get_video_files(
@@ -120,10 +120,9 @@ class TranscriptionService:
 
             # Generate subtitles
             logger.debug("Generating subtitles...")
-            output_path = self.subtitle_service.write_to_srt(
+            output_path = self.subtitle_service.write_subtitles(
                 self.punctuation_model, aligned_result, video_file.stem, output_dir
             )
-            logger.info(f"✅ Subtitles saved to: {output_path}")
 
             # Clean up temporary audio file
             if not self.audio_service.cleanup_audio_file(audio_file):
