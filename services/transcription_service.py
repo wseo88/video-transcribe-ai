@@ -91,6 +91,10 @@ class TranscriptionService:
             # Extract audio from video
             logger.debug("Extracting audio...")
             audio_file = self.audio_service.extract_audio(str(video_file))
+            
+            if audio_file is None:
+                logger.error(f"Failed to extract audio from {video_file.name}")
+                return False
 
             # Determine transcription task
             task = "translate"
@@ -122,8 +126,10 @@ class TranscriptionService:
             logger.info(f"✅ Subtitles saved to: {output_path}")
 
             # Clean up temporary audio file
-            os.remove(audio_file)
-            logger.debug("Cleaned up temporary audio file")
+            if not self.audio_service.cleanup_audio_file(audio_file):
+                logger.warning(f"Failed to clean up temporary audio file: {audio_file}")
+            else:
+                logger.debug("Cleaned up temporary audio file")
 
             return True
 
