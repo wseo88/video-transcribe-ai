@@ -2,7 +2,7 @@ import argparse
 import sys
 
 from core.logging import get_logger
-from core.models import TranscribeConfig
+from core.config import TranscribeConfig
 
 logger = get_logger(__name__)
 
@@ -77,11 +77,7 @@ Examples:
     utility_group.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose logging"
     )
-    utility_group.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show what would be processed without actually processing",
-    )
+    # Note: dry-run option removed; can be reintroduced later if needed
 
     return parser
 

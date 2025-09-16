@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union, Any
 
 from core.logging import get_logger
-from core.models import TranscribeConfig
+from core.config import TranscribeConfig
 
 logger = get_logger(__name__)
 

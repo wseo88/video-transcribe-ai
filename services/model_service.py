@@ -30,6 +30,10 @@ class ModelService:
             self.device = "cpu"
         else:
             self.device = device
+        # Hold references for later cleanup
+        self._whisper_model = None
+        self._align_model = None
+        self._align_metadata = None
 
     def get_model(self, size="medium", compute_type="int8_float16"):
         """
@@ -52,7 +56,10 @@ class ModelService:
             )
 
         try:
-            return whisperx.load_model(size, self.device, compute_type=compute_type)
+            self._whisper_model = whisperx.load_model(
+                size, self.device, compute_type=compute_type
+            )
+            return self._whisper_model
         except Exception as e:
             logger.error(f"Failed to load model: {size}: {e}")
             raise
@@ -64,6 +71,22 @@ class ModelService:
         Returns:
             tuple: (model, metadata) for alignment
         """
-        return whisperx.load_align_model(
+        self._align_model, self._align_metadata = whisperx.load_align_model(
             language_code=self.alignment_language, device=self.device
         )
+        return self._align_model, self._align_metadata
+
+    def cleanup_models(self) -> None:
+        """Best-effort cleanup to free model memory (CPU/GPU)."""
+        try:
+            # Drop references
+            self._whisper_model = None
+            self._align_model = None
+            self._align_metadata = None
+            # Torch-specific cleanup
+            if self.device == "cuda" and torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+        except Exception:
+            # Avoid raising on cleanup
+            pass
