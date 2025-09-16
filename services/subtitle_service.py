@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import Any, Optional, Union, dict
+from typing import Any, Optional, Union
 
 from core.config import TranscribeConfig
 from core.logging import get_logger

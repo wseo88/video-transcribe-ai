@@ -88,7 +88,7 @@ class TranscriptionService:
         try:
             self.model = self.model_service.get_model(size=self.config.model_size)
             self.model_alignment, self.metadata = (
-                self.model_service.load_alignment_model(language_code="en")
+                self.model_service.load_alignment_model()
             )
             logger.info("Models loaded successfully.")
             return True
@@ -96,7 +96,7 @@ class TranscriptionService:
             logger.exception("Failed to load models")
             return False
 
-    def transcribe(self) -> bool:
+    def transcribe(self) -> int:
         """
         Main transcription method that processes all discovered video files.
 
@@ -112,17 +112,19 @@ class TranscriptionService:
         processing is logged at the end.
 
         Returns:
-            True if all video files were processed successfully (no failures),
-            False if any video file failed to process or if no files were found.
+            Number of videos successfully transcribed
 
         Raises:
             No exceptions are raised; all errors are handled internally and logged.
-        """
+        """        
+        successful = 0
+        failed = 0
+
         # Get video files
         video_files = self._get_video_files_to_process()
         if video_files is None:
             logger.error("No video files to process")
-            return False
+            return successful
 
         # Get effective output directory (handled by Pydantic model)
         output_dir = self.config.effective_output_dir
@@ -130,12 +132,10 @@ class TranscriptionService:
         # Load models
         if not self._load_models():
             logger.error("Failed to load models, cannot proceed")
-            return False
+            return successful
 
         # Process files
-        successful = 0
-        failed = 0
-
+        
         logger.info(f"Processing {len(video_files)} file(s)...")
 
         for i, video_file in enumerate(video_files, 1):
@@ -157,7 +157,7 @@ class TranscriptionService:
         except Exception:
             pass
 
-        return True if failed == 0 else False
+        return successful
 
     def process_video(
         self,
@@ -234,6 +234,13 @@ class TranscriptionService:
                 logger.error(f"Failed to extract audio from {video_file.name}")
                 return False
 
+            # Load audio data for transcription
+            logger.debug("Loading audio data...")
+            audio_data = self.audio_service.load_audio_data(audio_file)
+            if audio_data is None:
+                logger.error(f"Failed to load audio data from {audio_file}")
+                return False
+
             # Determine transcription task
             task = "translate"
             transcribe_kwargs = {"task": task}
@@ -245,7 +252,7 @@ class TranscriptionService:
             logger.debug("Transcribing audio...")
             try:
                 result: TranscriptionService.TranscribeResult = self.model.transcribe(
-                    audio_file, **transcribe_kwargs
+                    audio_data, **transcribe_kwargs
                 )
             except RuntimeError as runtime_error:
                 message_lower = str(runtime_error).lower()
@@ -267,7 +274,7 @@ class TranscriptionService:
                     result["segments"],
                     self.model_alignment,
                     self.metadata,
-                    audio_file,
+                    audio_data,
                     self.model_service.device,
                     return_char_alignments=True,
                 )

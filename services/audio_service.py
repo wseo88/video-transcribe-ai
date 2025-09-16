@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 import ffmpeg
+import numpy as np
 
 from core.logging import get_logger
 
@@ -165,3 +166,42 @@ class AudioService:
         except OSError as e:
             logger.warning(f"Failed to clean up audio file {audio_path}: {e}")
             return False
+
+    def load_audio_data(self, audio_path: Union[str, Path]) -> Optional[np.ndarray]:
+        """
+        Load audio data from file into numpy array for processing.
+        
+        Args:
+            audio_path: Path to the audio file
+            
+        Returns:
+            numpy array containing audio data, or None if loading failed
+        """
+        audio_path = Path(audio_path)
+        
+        if not audio_path.exists():
+            logger.error(f"Audio file does not exist: {audio_path}")
+            return None
+            
+        try:
+            # Load audio using ffmpeg
+            logger.debug(f"Loading audio data from {audio_path.name}")
+            out, _ = (
+                ffmpeg
+                .input(str(audio_path))
+                .output('-', format='wav', ac=1, ar=16000)  # mono, 16kHz
+                .overwrite_output()
+                .run(capture_stdout=True, quiet=True)
+            )
+            
+            # Convert bytes to numpy array
+            audio_data = np.frombuffer(out, np.int16).astype(np.float32) / 32768.0
+            logger.debug(f"Loaded audio data: {len(audio_data)} samples")
+            return audio_data
+            
+        except ffmpeg.Error as e:
+            logger.error(f"Failed to load audio data from {audio_path}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error loading audio data from {audio_path}: {e}")
+            return None

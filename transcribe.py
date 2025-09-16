@@ -1,3 +1,4 @@
+from re import I
 import signal
 import sys
 import time
@@ -83,20 +84,10 @@ def main() -> int:
 
         # Create and run transcription service
         transcription_service = TranscriptionService(config=config)
-        result = transcription_service.transcribe()
+        result: int = transcription_service.transcribe()
 
         # Handle transcription result
-        if result is None:
-            logger.error("❌ Transcription service returned None")
-            exit_code = 1
-        elif isinstance(result, int):
-            exit_code = result
-        else:
-            logger.warning(
-                f"⚠️ Unexpected return type from transcription service: {type(result)}"
-            )
-            exit_code = 1
-
+        exit_code = 0 if result >= 0 else 1
     except KeyboardInterrupt:
         logger.info("🛑 Operation cancelled by user")
         exit_code = 130  # Standard exit code for SIGINT
