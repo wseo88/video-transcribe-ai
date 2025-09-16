@@ -139,7 +139,7 @@ class AudioService:
                     pass
             raise RuntimeError(error_msg) from e
 
-    def cleanup_aduio_file(self, audio_path: Union[str, Path]) -> bool:
+    def cleanup_audio_file(self, audio_path: Union[str, Path]) -> bool:
         """
         Clean up an audio file.
 

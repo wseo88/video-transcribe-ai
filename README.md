@@ -1,163 +1,136 @@
-# 🎥 Video Transcribe AI
+## 🎥 Video Transcribe AI
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![WhisperX](https://img.shields.io/badge/Powered%20by-WhisperX-orange.svg)](https://github.com/m-bain/whisperX)
 
-A powerful command-line tool that automatically transcribes audio from MP4 video files and generates professional-quality SRT subtitle files using OpenAI's Whisper and advanced post-processing techniques.
+Video Transcribe AI is a CLI tool that batch-transcribes videos and generates professional subtitles using OpenAI Whisper + WhisperX. It extracts audio, restores punctuation, aligns words, and writes clean `.srt`, `.vtt`, or `.txt` files.
 
-## ✨ Features
+### ✨ Highlights
+- Professional subtitles: sentence-aware splitting, line wrapping, readable cue durations
+- Word-level alignment via WhisperX
+- Punctuation restoration
+- Batch processing of files/directories
+- CUDA acceleration when available
+- Flexible output formats: `srt`, `vtt`, `txt`
 
-### 🎯 Core Functionality
-- **Automatic Transcription**: Extract and transcribe audio from MP4 videos using OpenAI Whisper
-- **Professional Subtitles**: Generate high-quality `.srt` (SubRip Subtitle) files
-- **Batch Processing**: Process multiple video files in a single run
-- **Smart Text Processing**: Automatic punctuation restoration and sentence boundary detection
-
-### 🚀 Advanced Features
-- **Word-Level Alignment**: Precise timing alignment using WhisperX
-- **Intelligent Cue Merging**: Automatically merges short subtitle segments for better readability
-- **Multi-Language Support**: Automatic language detection with translation capabilities
-- **GPU Acceleration**: CUDA support for faster processing (when available)
-- **Flexible Model Selection**: Support for all Whisper model sizes (`tiny`, `base`, `small`, `medium`, `large`)
-
-### 🎨 Output Quality
-- **Professional Formatting**: Properly formatted timestamps and line breaks
-- **Sentence-Aware Splitting**: Intelligent text segmentation at natural sentence boundaries
-- **Optimized Readability**: Automatic subtitle length optimization for better viewing experience
-
-## 📋 Requirements
-
-- **Python**: 3.8 or higher
-- **FFmpeg**: For audio extraction from video files
-- **CUDA** (optional): For GPU acceleration
+## 📦 Requirements
+- Python 3.8+
+- FFmpeg installed and on PATH
+- Optional: CUDA-capable GPU + drivers for faster inference
 
 ## 🚀 Quick Start
-
-### 1. Clone the Repository
-
 ```bash
 git clone https://github.com/your-username/video-transcribe-ai.git
 cd video-transcribe-ai
-```
 
-### 2. Create Virtual Environment
-
-```bash
 python -m venv venv
-
-# On Windows
+# Windows
 venv\Scripts\activate
-
-# On macOS/Linux
+# macOS/Linux
 source venv/bin/activate
-```
 
-### 3. Install Dependencies
-
-```bash
 pip install -r requirements.txt
-```
 
-### 4. Run the Tool
-
-Simply place your MP4 files in the project directory and run:
-
-```bash
+# Process all MP4 files in the current directory
 python transcribe.py
 ```
 
-The tool will automatically:
-1. Find all MP4 files in the current directory
-2. Extract audio from each video
-3. Transcribe using Whisper
-4. Generate professional SRT subtitle files
-5. Clean up temporary files
+## 🧭 Usage
+```bash
+python transcribe.py [options]
+```
 
-## 📁 Project Structure
+### Options
+- --input, -i: Input video file or directory (default: current directory)
+- --model-size: tiny | base | small | medium | large (default: medium)
+- --device: auto | cpu | cuda (default: auto)
+- --language, -l: 2-letter code (e.g., en, es) or "auto" (default: auto)
+- --output, -o: Output directory (default: alongside input)
+- --output-format: srt | vtt | txt (default: srt)
+- --verbose, -v: Enable verbose logging
+- --dry-run: Show what would be processed without doing work
 
+### Examples
+```bash
+# Process all videos in a folder
+python transcribe.py -i ./videos
+
+# Process a single file with the large model
+python transcribe.py -i myvideo.mp4 --model-size large
+
+# Auto-detect language and write VTT files to a custom folder
+python transcribe.py -i ./videos -o ./subs --output-format vtt
+
+# Force CPU and show verbose logs
+python transcribe.py -i myvideo.mp4 --device cpu --verbose
+```
+
+## 🔊 What it does
+1. Scans input for supported video files
+2. Extracts audio with FFmpeg
+3. Runs Whisper (size configurable)
+4. Aligns segments/words with WhisperX
+5. Restores punctuation
+6. Writes subtitles (`.srt`/`.vtt`) with clean timestamps and wrapping
+
+## 📁 Output
+For each input video `X.mp4`, subtitles are written to:
+```
+<output_dir>/<X>/<X>.<srt|vtt|txt>
+```
+Example:
+```
+output/
+└─ talk/
+   └─ talk.srt
+```
+
+## ⚙️ Configuration Details
+- Model size and device are resolved in `services/model_service.py`
+- Output format, language, and paths are validated via `core/models.py` (`TranscribeConfig`)
+- Subtitles are created in `services/subtitle_service.py` (supports SRT, VTT, TXT)
+
+## 🧩 Project Structure (key files)
 ```
 video-transcribe-ai/
-├── transcribe.py           # Main application entry point
-├── audio_processor.py      # Audio extraction from videos
-├── model_manager.py        # Whisper model loading and management
-├── subtitle_formatter.py   # SRT file generation and formatting
-├── text_processor.py       # Text processing and optimization
-├── requirements.txt        # Python dependencies
-└── README.md              # This file
+├─ transcribe.py                 # CLI entrypoint
+├─ cli/parser.py                 # CLI options & examples
+├─ core/
+│  ├─ models.py                  # TranscribeConfig (Pydantic)
+│  └─ logging.py                 # Centralized logging
+├─ services/
+│  ├─ audio_service.py           # FFmpeg audio extraction
+│  ├─ model_service.py           # Whisper/WhisperX model loading
+│  ├─ transcription_service.py   # Orchestration
+│  ├─ subtitle_service.py        # SRT/VTT/TXT generation
+│  └─ video_file_service.py      # File discovery & helpers
+└─ requirements.txt
 ```
 
-## 🔧 Configuration
-
-### Model Selection
-
-The tool uses the `medium` Whisper model by default. You can modify the model size in `model_manager.py`:
-
-```python
-def get_model(size="medium", device="cuda", compute_type="int8_float16"):
-    # Available sizes: tiny, base, small, medium, large
-    return whisperx.load_model(size, device, compute_type=compute_type)
-```
-
-### Language Settings
-
-The tool currently supports English transcription with translation. To modify language settings, update the `transcribe.py` file:
-
-```python
-# For transcription only (no translation)
-result = model.transcribe(audio_file, task="transcribe", language="en")
-
-# For translation to English
-result = model.transcribe(audio_file, task="translate")
-```
-
-## 📊 Performance
-
-| Model Size | Speed | Accuracy | Memory Usage |
-|------------|-------|----------|--------------|
-| tiny       | Fastest | Good     | ~1 GB        |
-| base       | Fast    | Better   | ~1 GB        |
-| small      | Medium  | Good     | ~2 GB        |
-| medium     | Slower  | Better   | ~5 GB        |
-| large      | Slowest | Best     | ~10 GB       |
-
-## 🎯 Use Cases
-
-- **Content Creators**: Generate subtitles for YouTube videos, tutorials, and presentations
-- **Educators**: Create accessible educational content with accurate subtitles
-- **Media Production**: Batch process multiple videos for subtitle generation
-- **Accessibility**: Make video content accessible to hearing-impaired audiences
-- **Localization**: Translate and subtitle content for international audiences
+## 🧪 Tips & Troubleshooting
+- Ensure FFmpeg is installed (`ffmpeg -version` should work)
+- If CUDA is requested but unavailable, the app falls back to CPU
+- Large models require significant RAM/VRAM; start with `medium` or `small`
+- Use `--verbose` for detailed logs
 
 ## 🤝 Contributing
+PRs are welcome! Please open an issue for feature requests or significant changes.
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+1. Fork the repo
+2. Create a branch: `git checkout -b feat/my-change`
+3. Commit: `git commit -m "feat: my change"`
+4. Push: `git push origin feat/my-change`
+5. Open a PR
 
 ## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).
 
 ## 🙏 Acknowledgments
-
-- [OpenAI Whisper](https://github.com/openai/whisper) - The core transcription engine
-- [WhisperX](https://github.com/m-bain/whisperX) - Enhanced Whisper with word-level alignment
-- [Deep Multilingual Punctuation](https://github.com/oliverguhr/deepmultilingualpunctuation) - Punctuation restoration
-- [FFmpeg](https://ffmpeg.org/) - Audio/video processing
-
-## 📞 Support
-
-If you encounter any issues or have questions, please:
-
-1. Check the [Issues](https://github.com/your-username/video-transcribe-ai/issues) page
-2. Create a new issue with detailed information about your problem
-3. Include your system specifications and error messages
+- [OpenAI Whisper](https://github.com/openai/whisper)
+- [WhisperX](https://github.com/m-bain/whisperX)
+- [Deep Multilingual Punctuation](https://github.com/oliverguhr/deepmultilingualpunctuation)
+- [FFmpeg](https://ffmpeg.org/)
 
 ---
-
-⭐ **Star this repository if you find it helpful!**
+⭐ If this helped you, consider starring the repo!

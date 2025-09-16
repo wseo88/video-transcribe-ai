@@ -19,7 +19,7 @@ class TranscriptionService:
 
     def __init__(self, config: TranscribeConfig):
         self.config = config
-        self.vide_file_service = VideoFileService()
+        self.video_file_service = VideoFileService()
         self.model_service = ModelService(self.config.device)
         self.audio_service = AudioService()
         self.model = None
@@ -29,16 +29,27 @@ class TranscriptionService:
         self.subtitle_service = SubtitleService(config)
 
     def _get_video_files_to_process(self) -> T.Optional[T.List[Path]]:
-        video_files: T.List[Path] = self.vide_file_service.get_video_files(
+        """
+        Get list of video files to process.
+        
+        Returns:
+            List of video file paths, or None if no files found
+        """
+        video_files: T.List[Path] = self.video_file_service.get_video_files(
             self.config.input
         )
         if not video_files:
             logger.error("No video files found!")
-            return 1
+            return None
         return video_files
 
-    def _load_models(self):
-        # Load models
+    def _load_models(self) -> bool:
+        """
+        Load required models for transcription.
+        
+        Returns:
+            True if models loaded successfully, False otherwise
+        """
         logger.info("Loading models...")
         try:
             self.model = self.model_service.get_model(size=self.config.model_size)
@@ -46,17 +57,31 @@ class TranscriptionService:
                 self.model_service.load_alignment_model(language_code="en")
             )
             logger.info("Models loaded successfully.")
+            return True
         except Exception as e:
             logger.error(f"Failed to load models: {e}")
-            return 1
+            return False
 
-    def transcribe(self):
+    def transcribe(self) -> bool:
+        """
+        Main transcription method that processes all video files.
+        
+        Returns:
+            True if transcription finished successfully, False otherwise
+        """
         # Get video files
         video_files = self._get_video_files_to_process()
+        if video_files is None:
+            logger.error("No video files to process")
+            return False
+            
         # Get effective output directory (handled by Pydantic model)
         output_dir = self.config.effective_output_dir
-        # load_models
-        self._load_models()
+        
+        # Load models
+        if not self._load_models():
+            logger.error("Failed to load models, cannot proceed")
+            return False
 
         # Process files
         successful = 0
@@ -77,15 +102,29 @@ class TranscriptionService:
             f"Processing complete! ✅ {successful} successful, ❌ {failed} failed"
         )
 
-        return 0 if failed == 0 else 1
+        return True if failed == 0 else False
 
     def process_video(
         self,
         video_file: Path,
         output_dir: Path,
     ) -> bool:
-        """Process a single video file."""
+        """
+        Process a single video file.
+        
+        Args:
+            video_file: Path to the video file to process
+            output_dir: Output directory for subtitle files
+            
+        Returns:
+            True if processing succeeded, False otherwise
+        """
         logger.info(f"Processing: {video_file.name}")
+
+        # Validate that models are loaded
+        if self.model is None or self.model_alignment is None or self.metadata is None:
+            logger.error("Models not loaded, cannot process video")
+            return False
 
         try:
             # Extract audio from video
