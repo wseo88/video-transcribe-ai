@@ -1,8 +1,8 @@
 import argparse
 import sys
 
-from core.logging import get_logger
 from core.config import TranscribeConfig
+from core.logging import get_logger
 
 logger = get_logger(__name__)
 

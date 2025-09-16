@@ -5,9 +5,9 @@ Provides consistent logging setup across all modules.
 
 import logging
 import sys
+import typing as T
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional
 
 
 class LogLevel(Enum):
@@ -40,7 +40,7 @@ class LoggingConfig:
         format_string: str = DEFAULT_FORMAT,
         handlers: list = None,
         log_to_file: bool = False,
-        log_file_path: Optional[Path] = None,
+        log_file_path: T.Optional[Path] = None,
     ):
         self.level = level
         self.format_string = format_string
@@ -51,7 +51,7 @@ class LoggingConfig:
 
 def setup_logging(
     is_verbose: bool = False,
-    logging_config: Optional[LoggingConfig] = None,
+    logging_config: T.Optional[LoggingConfig] = None,
 ) -> logging.Logger:
     """
     Set up centralized logging configuration.
@@ -148,7 +148,7 @@ def set_log_level(level: LogLevel) -> None:
 def add_file_logging(
     log_file_path: Path,
     level: LogLevel = LogLevel.DEBUG,
-    format_string: Optional[str] = None,
+    format_string: T.Optional[str] = None,
 ) -> None:
     """
     Add file logging to existing configuration.
@@ -177,7 +177,7 @@ def add_file_logging(
     root_logger.addHandler(file_handler)
 
 
-def get_logging_stats() -> Dict[str, Any]:
+def get_logging_stats() -> dict[str, T.Any]:
     """
     Get statistics about current logging configuration.
 

@@ -30,7 +30,7 @@ def validate_environment() -> bool:
         if not current_dir.exists():
             logger.error(f"❌ Current directory does not exist: {current_dir}")
             return False
-            
+
         # Check write permissions
         test_file = current_dir / ".write_test"
         try:
@@ -39,7 +39,7 @@ def validate_environment() -> bool:
         except PermissionError:
             logger.error(f"❌ No write permission in current directory: {current_dir}")
             return False
-            
+
         return True
     except Exception as e:
         logger.error(f"❌ Environment validation failed: {e}")
@@ -49,17 +49,17 @@ def validate_environment() -> bool:
 def main() -> int:
     """
     Main function with CLI interface.
-    
+
     Returns:
         int: Exit code (0 for success, non-zero for failure)
     """
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     start_time = time.time()
     exit_code = 0
-    
+
     try:
         # Parse command line arguments
         parser = setup_argument_parser()
@@ -70,7 +70,7 @@ def main() -> int:
 
         # Set up centralized logging
         setup_logging(is_verbose=config.verbose)
-        
+
         logger.info("🎥 Video Transcribe AI - Starting transcription process")
         logger.info(f"📁 Input: {config.input}")
         logger.info(f"🔧 Model: {config.model_size}, Device: {config.device}")
@@ -84,7 +84,7 @@ def main() -> int:
         # Create and run transcription service
         transcription_service = TranscriptionService(config=config)
         result = transcription_service.transcribe()
-        
+
         # Handle transcription result
         if result is None:
             logger.error("❌ Transcription service returned None")
@@ -92,7 +92,9 @@ def main() -> int:
         elif isinstance(result, int):
             exit_code = result
         else:
-            logger.warning(f"⚠️ Unexpected return type from transcription service: {type(result)}")
+            logger.warning(
+                f"⚠️ Unexpected return type from transcription service: {type(result)}"
+            )
             exit_code = 1
 
     except KeyboardInterrupt:
@@ -105,10 +107,12 @@ def main() -> int:
         # Calculate and log execution time
         execution_time = time.time() - start_time
         if exit_code == 0:
-            logger.info(f"✅ Transcription completed successfully in {execution_time:.2f} seconds")
+            logger.info(
+                f"✅ Transcription completed successfully in {execution_time:.2f} seconds"
+            )
         else:
             logger.error(f"❌ Transcription failed after {execution_time:.2f} seconds")
-    
+
     return exit_code
 
 

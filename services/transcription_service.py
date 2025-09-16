@@ -1,12 +1,11 @@
-import os
-import typing as T
 from pathlib import Path
+from typing import Optional
 
 import whisperx
 from deepmultilingualpunctuation import PunctuationModel
 
-from core.logging import get_logger
 from core.config import TranscribeConfig
+from core.logging import get_logger
 from services.audio_service import AudioService
 from services.model_service import ModelService
 from services.subtitle_service import SubtitleService
@@ -20,11 +19,11 @@ class TranscriptionService:
     def __init__(self, config: TranscribeConfig):
         """
         Initialize the TranscriptionService with configuration and dependencies.
-        
+
         Args:
             config: Configuration object containing transcription settings including
                    device, model size, language, input/output paths, and format options.
-        
+
         Attributes:
             config: The transcription configuration
             video_file_service: Service for discovering video files
@@ -46,22 +45,22 @@ class TranscriptionService:
         self.punctuation_model = PunctuationModel()
         self.subtitle_service = SubtitleService(config)
 
-    def _get_video_files_to_process(self) -> T.Optional[T.List[Path]]:
+    def _get_video_files_to_process(self) -> Optional[list[Path]]:
         """
         Discover and return video files to be processed for transcription.
-        
+
         Searches the configured input directory for supported video file formats
         and returns a list of valid video file paths. If no video files are found,
         logs an error and returns None.
-        
+
         Returns:
             List of Path objects pointing to video files, or None if no files found.
             Returns None if the input directory is invalid or contains no supported formats.
-        
+
         Raises:
             No exceptions are raised; errors are logged and None is returned.
         """
-        video_files: T.List[Path] = self.video_file_service.get_video_files(
+        video_files: list[Path] = self.video_file_service.get_video_files(
             self.config.input
         )
         if not video_files:
@@ -72,16 +71,16 @@ class TranscriptionService:
     def _load_models(self) -> bool:
         """
         Load the Whisper model and alignment models required for transcription.
-        
+
         Loads the main Whisper model with the configured size and the alignment
         model for precise timing. Both models are stored as instance attributes
         for use during transcription. If loading fails, logs the error and
         returns False.
-        
+
         Returns:
             True if all models loaded successfully, False if any model fails to load.
             On failure, the corresponding model attributes remain None.
-        
+
         Raises:
             No exceptions are raised; errors are logged and False is returned.
         """
@@ -100,22 +99,22 @@ class TranscriptionService:
     def transcribe(self) -> bool:
         """
         Main transcription method that processes all discovered video files.
-        
+
         Orchestrates the complete transcription workflow:
         1. Discovers video files in the configured input directory
         2. Loads required AI models (Whisper and alignment)
         3. Processes each video file through the complete pipeline
         4. Generates subtitle files in the configured output format
         5. Cleans up resources and provides a summary
-        
+
         The method handles errors gracefully, continuing to process remaining
         files even if individual files fail. A summary of successful and failed
         processing is logged at the end.
-        
+
         Returns:
             True if all video files were processed successfully (no failures),
             False if any video file failed to process or if no files were found.
-        
+
         Raises:
             No exceptions are raised; all errors are handled internally and logged.
         """
@@ -124,10 +123,10 @@ class TranscriptionService:
         if video_files is None:
             logger.error("No video files to process")
             return False
-            
+
         # Get effective output directory (handled by Pydantic model)
         output_dir = self.config.effective_output_dir
-        
+
         # Load models
         if not self._load_models():
             logger.error("Failed to load models, cannot proceed")
@@ -167,7 +166,7 @@ class TranscriptionService:
     ) -> bool:
         """
         Process a single video file through the complete transcription pipeline.
-        
+
         Performs the following steps for each video file:
         1. Checks if output already exists (skips if found)
         2. Validates that required models are loaded
@@ -176,22 +175,22 @@ class TranscriptionService:
         5. Aligns the transcription for precise timing
         6. Generates subtitle files in the configured format
         7. Cleans up temporary audio files
-        
+
         The method includes comprehensive error handling for each step,
         with specific error messages for different failure modes (file not found,
         GPU memory issues, transcription failures, etc.).
-        
+
         Args:
             video_file: Path to the video file to process. Must be a valid
                        video file with supported format.
             output_dir: Directory where subtitle files will be written.
                        Subdirectories will be created as needed.
-        
+
         Returns:
             True if the video was processed successfully and subtitle files
             were generated, False if any step in the pipeline failed.
             Returns True immediately if output already exists (skip mode).
-        
+
         Raises:
             No exceptions are raised; all errors are caught and logged internally.
             The method handles FileNotFoundError, RuntimeError (GPU issues),
@@ -216,7 +215,7 @@ class TranscriptionService:
             logger.error("Models not loaded, cannot process video")
             return False
 
-        audio_file: T.Optional[str] = None
+        audio_file: Optional[str] = None
         try:
             # Extract audio from video
             logger.debug("Extracting audio...")
@@ -228,9 +227,7 @@ class TranscriptionService:
                 )
                 return False
             except Exception:
-                logger.exception(
-                    f"Failed to extract audio from {video_file.name}"
-                )
+                logger.exception(f"Failed to extract audio from {video_file.name}")
                 return False
 
             if audio_file is None:
@@ -247,7 +244,7 @@ class TranscriptionService:
             # Transcribe audio
             logger.debug("Transcribing audio...")
             try:
-                result: "TranscriptionService.TranscribeResult" = self.model.transcribe(
+                result: TranscriptionService.TranscribeResult = self.model.transcribe(
                     audio_file, **transcribe_kwargs
                 )
             except RuntimeError as runtime_error:
@@ -266,7 +263,7 @@ class TranscriptionService:
             # Align transcription
             logger.debug("Aligning transcription...")
             try:
-                aligned_result: "TranscriptionService.AlignedResult" = whisperx.align(
+                aligned_result: TranscriptionService.AlignedResult = whisperx.align(
                     result["segments"],
                     self.model_alignment,
                     self.metadata,

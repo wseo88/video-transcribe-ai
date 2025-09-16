@@ -1,7 +1,9 @@
-"""Utility functions for video file handling."""
+"""
+Utility functions for video file handling.
+"""
 
 from pathlib import Path
-from typing import List, Union
+from typing import Union
 
 from services.video_file_service import VideoFileService
 
@@ -11,7 +13,7 @@ _video_service = VideoFileService()
 
 def get_video_files(
     input_path: Union[str, Path], recursive: bool = False
-) -> List[Path]:
+) -> list[Path]:
     """
     Convenience function to get video files using the VideoFileService.
 
@@ -20,7 +22,7 @@ def get_video_files(
         recursive: Whether to search subdirectories recursively
 
     Returns:
-        List of Path objects for valid video files
+        list of Path objects for valid video files
 
     Raises:
         FileNotFoundError: If the input path doesn't exist

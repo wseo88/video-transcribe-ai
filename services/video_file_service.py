@@ -5,7 +5,7 @@ Handles video file discovery, validation, and metadata operations.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Optional, Union
 
 from core.logging import get_logger
 
@@ -40,7 +40,7 @@ class VideoFileService:
     """
 
     # Class constants
-    DEFAULT_SUPPORTED_FORMATS: Set[str] = {
+    DEFAULT_SUPPORTED_FORMATS: set[str] = {
         ".mp4",
         ".avi",
         ".mov",
@@ -51,7 +51,7 @@ class VideoFileService:
     }
 
     # Additional formats that might be useful
-    EXTENDED_FORMATS: Set[str] = DEFAULT_SUPPORTED_FORMATS | {
+    EXTENDED_FORMATS: set[str] = DEFAULT_SUPPORTED_FORMATS | {
         ".m4v",
         ".3gp",
         ".ogv",
@@ -64,13 +64,13 @@ class VideoFileService:
     MIN_FILE_SIZE = 1024  # 1KB
     MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024  # 10GB
 
-    def __init__(self, supported_formats: Optional[Set[str]] = None):
+    def __init__(self, supported_formats: Optional[set[str]] = None):
         self.supported_formats = supported_formats or self.DEFAULT_SUPPORTED_FORMATS
         logger.info(
             f"VideoFileService initialized with formats: {self.supported_formats}"
         )
 
-    def get_video_files(self, input_path: Union[str, Path]) -> List[Path]:
+    def get_video_files(self, input_path: Union[str, Path]) -> list[Path]:
         """
         Get list of video files from input path.
 
@@ -138,12 +138,12 @@ class VideoFileService:
             logger.error(f"Could not get file info for {file_path}: {e}")
             return None
 
-    def get_video_files_summary(self, video_files: List[Path]) -> Dict[str, Any]:
+    def get_video_files_summary(self, video_files: list[Path]) -> dict[str, Any]:
         """
         Get a summary of video files including total count, sizes, and formats.
 
         Args:
-            video_files: List of video file paths
+            video_files: list of video file paths
 
         Returns:
             Dictionary with summary statistics
@@ -169,7 +169,7 @@ class VideoFileService:
             "files": file_infos,
         }
 
-    def _validate_video_file(self, file_path: Path) -> List[Path]:
+    def _validate_video_file(self, file_path: Path) -> list[Path]:
         """Validate a single video file and return it if it's a valid video file."""
         if not self.is_video_file(file_path):
             logger.warning(f"Unsupported file format: {file_path.suffix}")
@@ -188,7 +188,7 @@ class VideoFileService:
 
         return [file_path]
 
-    def _find_video_files_in_directory(self, directory: Path) -> List[Path]:
+    def _find_video_files_in_directory(self, directory: Path) -> list[Path]:
         """Find and validate all video files in a directory"""
         video_files = []
 
@@ -212,20 +212,20 @@ class VideoFileService:
 
     def filter_video_files_by_size(
         self,
-        video_files: List[Path],
+        video_files: list[Path],
         min_size: Optional[int] = None,
         max_size: Optional[int] = None,
-    ) -> List[Path]:
+    ) -> list[Path]:
         """
         Filter video files by size constraints.
 
         Args:
-            video_files: List of video file paths
+            video_files: list of video file paths
             min_size: Minimum file size in bytes
             max_size: Maximum file size in bytes
 
         Returns:
-            List of video files that meet the size criteria
+            list of video files that meet the size criteria
         """
         filtered_files = []
 
