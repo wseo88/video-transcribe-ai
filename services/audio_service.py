@@ -9,7 +9,16 @@ from typing import Optional, Union
 import ffmpeg
 import numpy as np
 
+from core.exceptions import (
+    AudioExtractionError,
+    AudioLoadError,
+    FileNotFoundError,
+    FileAccessError,
+    ValidationError,
+    RetryableError,
+)
 from core.logging import get_logger
+from core.retry import retry_on_resource_error
 
 logger = get_logger(__name__)
 
@@ -48,38 +57,68 @@ class AudioService:
             f"AudioService initialized: {channels}ch, {sample_rate}, {audio_format}"
         )
 
+    def _validate_video_file(self, video_path: Path) -> None:
+        """
+        Validate video file before processing.
+        
+        Args:
+            video_path: Path to the video file
+            
+        Raises:
+            FileNotFoundError: If video file doesn't exist
+            ValidationError: If video file is invalid
+            FileAccessError: If file cannot be accessed
+        """
+        if not video_path.exists():
+            raise FileNotFoundError(video_path, "video file")
+        
+        if not video_path.is_file():
+            raise ValidationError("video_path", str(video_path), "Path is not a file")
+        
+        # Check file size
+        try:
+            file_size = video_path.stat().st_size
+            if file_size == 0:
+                raise ValidationError("video_path", str(video_path), "File is empty")
+            if file_size > 10 * 1024 * 1024 * 1024:  # 10GB limit
+                raise ValidationError("video_path", str(video_path), "File too large (>10GB)")
+        except OSError as e:
+            raise FileAccessError(video_path, "access", e) from e
+        
+        # Check if file is readable
+        try:
+            with open(video_path, 'rb') as f:
+                f.read(1024)  # Try to read first 1KB
+        except (OSError, PermissionError) as e:
+            raise FileAccessError(video_path, "read", e) from e
+
+    @retry_on_resource_error(max_attempts=3, delay=2.0)
     def extract_audio(
         self,
         video_path: Union[str, Path],
         output_path: Optional[Union[str, Path]] = None,
-    ) -> Optional[Path]:
+    ) -> Path:
         """
-        Extract audio from video file using ffmpeg.
+        Extract audio from video file using ffmpeg with robust error handling.
 
         Args:
             video_path: Path to the video file
             output_path: Optional custom output path. If None, uses video filename with audio extension
 
         Returns:
-            Path to the extracted audio file, or None if extraction failed
+            Path to the extracted audio file
 
         Raises:
             FileNotFoundError: If video file doesn't exist
-            ValueError: If video file is invalid
-            RuntimeError: If ffmpeg extraction fails
+            ValidationError: If video file is invalid
+            FileAccessError: If file cannot be accessed
+            AudioExtractionError: If ffmpeg extraction fails
         """
 
         video_path = Path(video_path)
-
-        if not video_path.exists():
-            error_message = f"Video file does not exist: {video_path}"
-            logger.error(error_message)
-            raise FileNotFoundError(error_message)
-
-        if not video_path.is_file():
-            error_message = f"Path is not a file: {video_path}"
-            logger.error(error_message)
-            raise ValueError(error_message)
+        
+        # Validate input file
+        self._validate_video_file(video_path)
 
         # Determine output path
         if output_path is None:
@@ -126,7 +165,7 @@ class AudioService:
                     logger.debug("Cleaned up partial audio file")
                 except OSError:
                     pass
-            raise RuntimeError(error_msg) from e
+            raise AudioExtractionError(video_path, e) from e
 
         except Exception as e:
             error_msg = f"Unexpected error during audio extraction: {str(e)}"
@@ -138,7 +177,7 @@ class AudioService:
                     logger.debug("Cleaned up partial audio file")
                 except OSError:
                     pass
-            raise RuntimeError(error_msg) from e
+            raise AudioExtractionError(video_path, e) from e
 
     def cleanup_audio_file(self, audio_path: Union[str, Path]) -> bool:
         """
@@ -167,7 +206,8 @@ class AudioService:
             logger.warning(f"Failed to clean up audio file {audio_path}: {e}")
             return False
 
-    def load_audio_data(self, audio_path: Union[str, Path]) -> Optional[np.ndarray]:
+    @retry_on_resource_error(max_attempts=2, delay=1.0)
+    def load_audio_data(self, audio_path: Union[str, Path]) -> np.ndarray:
         """
         Load audio data from file into numpy array for processing.
         
@@ -175,13 +215,19 @@ class AudioService:
             audio_path: Path to the audio file
             
         Returns:
-            numpy array containing audio data, or None if loading failed
+            numpy array containing audio data
+            
+        Raises:
+            FileNotFoundError: If audio file doesn't exist
+            AudioLoadError: If audio loading fails
         """
         audio_path = Path(audio_path)
         
         if not audio_path.exists():
-            logger.error(f"Audio file does not exist: {audio_path}")
-            return None
+            raise FileNotFoundError(audio_path, "audio file")
+        
+        if not audio_path.is_file():
+            raise ValidationError("audio_path", str(audio_path), "Path is not a file")
             
         try:
             # Load audio using ffmpeg
@@ -194,14 +240,23 @@ class AudioService:
                 .run(capture_stdout=True, quiet=True)
             )
             
+            if not out:
+                raise AudioLoadError(audio_path, "No audio data returned from ffmpeg")
+            
             # Convert bytes to numpy array
             audio_data = np.frombuffer(out, np.int16).astype(np.float32) / 32768.0
+            
+            if len(audio_data) == 0:
+                raise AudioLoadError(audio_path, "Empty audio data")
+            
             logger.debug(f"Loaded audio data: {len(audio_data)} samples")
             return audio_data
             
         except ffmpeg.Error as e:
-            logger.error(f"Failed to load audio data from {audio_path}: {e}")
-            return None
+            error_msg = f"FFmpeg error loading audio: {e.stderr.decode() if e.stderr else str(e)}"
+            logger.error(error_msg)
+            raise AudioLoadError(audio_path, e) from e
         except Exception as e:
-            logger.error(f"Unexpected error loading audio data from {audio_path}: {e}")
-            return None
+            error_msg = f"Unexpected error loading audio data: {e}"
+            logger.error(error_msg)
+            raise AudioLoadError(audio_path, e) from e

@@ -5,7 +5,21 @@ import whisperx
 from deepmultilingualpunctuation import PunctuationModel
 
 from core.config import TranscribeConfig
+from core.exceptions import (
+    ModelLoadError,
+    ModelInferenceError,
+    AudioExtractionError,
+    AudioLoadError,
+    SubtitleError,
+    FileNotFoundError,
+    FileAccessError,
+    ValidationError,
+    GPUError,
+    MemoryError,
+    TranscriptionError,
+)
 from core.logging import get_logger
+from core.retry import retry_on_resource_error, retry_on_network_error
 from services.audio_service import AudioService
 from services.model_service import ModelService
 from services.subtitle_service import SubtitleService
@@ -68,21 +82,22 @@ class TranscriptionService:
             return None
         return video_files
 
+    @retry_on_resource_error(max_attempts=2, delay=5.0)
     def _load_models(self) -> bool:
         """
         Load the Whisper model and alignment models required for transcription.
 
         Loads the main Whisper model with the configured size and the alignment
         model for precise timing. Both models are stored as instance attributes
-        for use during transcription. If loading fails, logs the error and
-        returns False.
+        for use during transcription.
 
         Returns:
             True if all models loaded successfully, False if any model fails to load.
-            On failure, the corresponding model attributes remain None.
 
         Raises:
-            No exceptions are raised; errors are logged and False is returned.
+            ModelLoadError: If model loading fails
+            GPUError: If GPU-related errors occur during loading
+            MemoryError: If insufficient memory for model loading
         """
         logger.info("Loading models...")
         try:
@@ -92,9 +107,16 @@ class TranscriptionService:
             )
             logger.info("Models loaded successfully.")
             return True
-        except Exception:
-            logger.exception("Failed to load models")
-            return False
+        except RuntimeError as e:
+            error_msg = str(e).lower()
+            if "cuda" in error_msg or "gpu" in error_msg:
+                raise GPUError("model loading", e) from e
+            elif "memory" in error_msg or "out of memory" in error_msg:
+                raise MemoryError("model loading") from e
+            else:
+                raise ModelLoadError(self.config.model_size, self.config.device, e) from e
+        except Exception as e:
+            raise ModelLoadError(self.config.model_size, self.config.device, e) from e
 
     def transcribe(self) -> int:
         """
@@ -221,24 +243,22 @@ class TranscriptionService:
             logger.debug("Extracting audio...")
             try:
                 audio_file = self.audio_service.extract_audio(str(video_file))
-            except FileNotFoundError:
-                logger.exception(
-                    f"Input video not found while extracting audio: {video_file}"
-                )
+            except (FileNotFoundError, ValidationError, FileAccessError) as e:
+                logger.error(f"Audio extraction failed: {e}")
                 return False
-            except Exception:
-                logger.exception(f"Failed to extract audio from {video_file.name}")
-                return False
-
-            if audio_file is None:
-                logger.error(f"Failed to extract audio from {video_file.name}")
+            except AudioExtractionError as e:
+                logger.error(f"Audio extraction failed: {e}")
                 return False
 
             # Load audio data for transcription
             logger.debug("Loading audio data...")
-            audio_data = self.audio_service.load_audio_data(audio_file)
-            if audio_data is None:
-                logger.error(f"Failed to load audio data from {audio_file}")
+            try:
+                audio_data = self.audio_service.load_audio_data(audio_file)
+            except (FileNotFoundError, ValidationError) as e:
+                logger.error(f"Audio loading failed: {e}")
+                return False
+            except AudioLoadError as e:
+                logger.error(f"Audio loading failed: {e}")
                 return False
 
             # Determine transcription task
@@ -254,18 +274,17 @@ class TranscriptionService:
                 result: TranscriptionService.TranscribeResult = self.model.transcribe(
                     audio_data, **transcribe_kwargs
                 )
-            except RuntimeError as runtime_error:
-                message_lower = str(runtime_error).lower()
-                if "out of memory" in message_lower or "cuda" in message_lower:
-                    logger.exception(
-                        "Transcription failed due to GPU/CUDA error (possible OOM)."
-                    )
+            except RuntimeError as e:
+                error_msg = str(e).lower()
+                if "out of memory" in error_msg or "cuda" in error_msg:
+                    logger.error("Transcription failed due to GPU/CUDA error (possible OOM)")
+                    raise GPUError("transcription", e) from e
                 else:
-                    logger.exception("Transcription failed with runtime error")
-                return False
-            except Exception:
-                logger.exception("Transcription failed")
-                return False
+                    logger.error("Transcription failed with runtime error")
+                    raise ModelInferenceError("transcription", e) from e
+            except Exception as e:
+                logger.error("Transcription failed")
+                raise ModelInferenceError("transcription", e) from e
 
             # Align transcription
             logger.debug("Aligning transcription...")
@@ -278,14 +297,12 @@ class TranscriptionService:
                     self.model_service.device,
                     return_char_alignments=True,
                 )
-            except KeyError:
-                logger.exception(
-                    "Alignment failed: 'segments' missing or malformed in transcription result"
-                )
-                return False
-            except Exception:
-                logger.exception("Alignment failed")
-                return False
+            except KeyError as e:
+                logger.error("Alignment failed: 'segments' missing or malformed in transcription result")
+                raise ModelInferenceError("alignment", e) from e
+            except Exception as e:
+                logger.error("Alignment failed")
+                raise ModelInferenceError("alignment", e) from e
 
             # Generate subtitles
             logger.debug("Generating subtitles...")
@@ -294,11 +311,24 @@ class TranscriptionService:
                     self.punctuation_model, aligned_result, video_file.stem, output_dir
                 )
                 logger.debug(f"Subtitle written successfully to {output_path}")
-            except Exception:
-                logger.exception("Failed to write subtitles")
-                return False
+            except Exception as e:
+                logger.error("Failed to write subtitles")
+                raise SubtitleError("generation", video_file, e) from e
 
             return True
+
+        except (AudioExtractionError, AudioLoadError, ModelInferenceError, SubtitleError) as e:
+            logger.error(f"Processing failed: {e}")
+            return False
+        except (FileNotFoundError, ValidationError, FileAccessError) as e:
+            logger.error(f"File error: {e}")
+            return False
+        except (GPUError, MemoryError) as e:
+            logger.error(f"Resource error: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error processing {video_file.name}: {e}")
+            return False
 
         finally:
             # Ensure cleanup of temporary audio file when possible
