@@ -274,7 +274,7 @@ class TranscriptionService:
                     result["segments"],
                     self.model_alignment,
                     self.metadata,
-                    audio_data,
+                    str(audio_file),  # WhisperX expects file path, not numpy array
                     self.model_service.device,
                     return_char_alignments=True,
                 )
